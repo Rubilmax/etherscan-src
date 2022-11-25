@@ -8,6 +8,7 @@ import {
 
 import chainIds from "./constants/chainIds";
 import rpcs from "./constants/rpcs.json";
+import { FetchError } from "./errors";
 import { getEtherscanUrl } from "./etherscan";
 import {
   Config,
@@ -32,29 +33,45 @@ export const fetchSourcesAt = async (
       : chainIds[network.toLowerCase()];
 
     // @ts-ignore
-    rpcUrl ??= rpcs[chainId.toString()]?.rpcs[0];
-  }
+    const rpcUrls = rpcs[chainId.toString()]?.rpcs ?? [];
 
-  if (provider || rpcUrl) {
-    provider ??= new ethers.providers.JsonRpcBatchProvider(rpcUrl);
+    let rpcUrlIndex = 0;
+    while (rpcUrlIndex < rpcUrls.length) {
+      rpcUrl = rpcUrls[rpcUrlIndex];
+      provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+
+      try {
+        address = await getImplementationAddress(provider, address);
+      } catch (error: any) {
+        if (error instanceof EIP1967ImplementationNotFound) break;
+      }
+
+      rpcUrlIndex += 1;
+    }
+  } else {
+    if (rpcUrl) provider = new ethers.providers.JsonRpcProvider(rpcUrl);
 
     try {
-      address = await getImplementationAddress(provider, address);
+      address = await getImplementationAddress(provider!, address);
     } catch (error: any) {
       if (!(error instanceof EIP1967ImplementationNotFound)) throw error;
     }
-
-    chainId = provider.network.chainId;
   }
 
-  const { data } = await axios.get<EtherscanSourceCodeResponse>(
-    getEtherscanUrl(chainId, "contract", {
-      action: "getsourcecode",
-      address,
-      apiKey,
-    })
-  );
-  if (isEtherscanError(data)) throw new Error(data.result);
+  const url = getEtherscanUrl((await provider!.detectNetwork()).chainId, "contract", {
+    action: "getsourcecode",
+    address,
+    apiKey,
+  });
+  const { data } = await axios.get<EtherscanSourceCodeResponse>(url.toString());
+
+  if (isEtherscanError(data)) throw new FetchError(data.result, chainId, url.hostname);
+  if (!data.result[0]?.SourceCode)
+    throw new FetchError(
+      data.result[0]?.ABI ?? "Contract source code not verified",
+      chainId,
+      url.hostname
+    );
 
   try {
     return {
@@ -68,6 +85,6 @@ export const fetchSourcesAt = async (
           }) as EtherscanSourceCode,
     };
   } catch {
-    throw new Error(data.result[0].ABI);
+    throw new FetchError("Cannot parse sources", chainId, url.hostname);
   }
 };

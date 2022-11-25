@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 
+import { FetchError } from "./errors";
 import { fetchSourcesAt } from "./fetch";
 
 dotenv.config();
@@ -113,13 +114,13 @@ const fetchSources = () => {
           )
         );
       } catch (error: any) {
-        console.log(
-          colors.red(
-            `Error while fetching sources for ${colors.bold(address)}: ${colors.bold(
-              error.message
-            )}`
-          )
-        );
+        let base = `Error fetching sources for ${colors.bold(address)}`;
+        if (error instanceof FetchError)
+          base += ` from ${colors.underline(
+            colors.bold(error.hostname)
+          )} for chain with id ${colors.bold(error.chainId.toString())}`;
+
+        console.log(colors.red(`${base}: ${colors.bold(error.message)}`));
       }
     })
   );

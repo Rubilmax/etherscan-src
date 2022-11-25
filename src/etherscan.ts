@@ -60,5 +60,5 @@ export const getEtherscanUrl = (
     return accum;
   }, "");
 
-  return `${getEtherscanBaseUrl(chainId)}/api?module=${module}${query}`;
+  return new URL(`${getEtherscanBaseUrl(chainId)}/api?module=${module}${query}`);
 };
